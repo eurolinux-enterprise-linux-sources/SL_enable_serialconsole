@@ -1,10 +1,7 @@
 Name:		SL_enable_serialconsole
-Version:	4.1
-Release:	1%{?dist}
+Version:	4.3
+Release:	2%{?dist}
 Summary:	Script to enable serial console in all the right places.
-Vendor:		Scientific Linux
-Packager:	Pat Riehecky
-
 Group:		SL
 License:	GPL
 URL:		http://www.scientificlinux.org/
@@ -182,6 +179,15 @@ if [[ "$1" == '0' ]]; then # uninstall
 fi
 
 %changelog
+* Tue Mar 01 2016 Kevin M. Hill <kevinh@fnal.gov> 4.3-2
+- Clean up spec file to match SL standards.
+
+* Fri Feb 26 2016 Kevin M. Hill <kevinh@fnal.gov> 4.3-1
+- add/remove device entry in /etc/securetty.
+
+* Thu Feb 25 2016 Kevin M. Hill <kevinh@fnal.gov> 4.2-1
+- now works for grub installs with non-linux entries or just 1 entry.
+
 * Mon Jan 30 2012 Pat Riehecky <riehecky@fnal.gov> 4.1-1
 - added '-r' option to script for removal of the configuration
 - now removes configuration when uninstalled

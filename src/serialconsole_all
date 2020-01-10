@@ -91,6 +91,8 @@ if [[ ! -w /etc/securetty ]]; then
     exit 20
 fi
 
+TTY=$(echo $DEVICE | cut -d'/' -f3)
+
 if [[ "$INSTALL" == 'true' ]]; then  # installing the serial console
     if [[ -e $DEVICE ]]; then
         # make sure the name matches what we expect
@@ -143,64 +145,41 @@ if [[ "$INSTALL" == 'true' ]]; then  # installing the serial console
     esac
 
     # first remove the 'serial' and 'terminal' lines so we have a known state
-    cat > $TEMP <<AUGREMOVE
-rm /files/boot/grub/menu.lst/serial
-rm /files/boot/grub/menu.lst/terminal
-AUGREMOVE
 
-    GRUB_TITLES=$(augtool ls /files/boot/grub/menu.lst|grep 'title\[' | cut -d'[' -f2 | cut -d']' -f1)
-    for entry in $GRUB_TITLES; do
-        # first remove all 'console' lines so we have a known state
-        cat >> $TEMP <<AUGCLEANCONSOLE
-rm /files/boot/grub/menu.lst/title[$entry]/kernel/console
-AUGCLEANCONSOLE
-    done
-
-    echo 'save' >> $TEMP
-    augtool -b < $TEMP >/dev/null
-    rm -f $TEMP
+    # first remove all 'console' lines so we have a known state
 
     # the serial and terminal lines need to be at the top of the file
     # this will find the first non comment line
-    FIRST_NON_COMMENT=$(augtool ls /files/boot/grub/menu.lst|grep -v '#comment'|head -1|cut -d' ' -f1)
-
-    if [[ "x$FIRST_NON_COMMENT" == 'x' ]]; then
-        echo "Augtool unable to find non-comment lines in /boot/grub/menu.lst" >&2
-        exit 20
-    fi
 
     if [[ "$QUIET" == 'false' ]]; then
         echo "Adding $DEVICE,$SPEED to /boot/grub/menu.lst"
     fi
 
     # add the 'serial' and 'terminal' lines
-    cat > $TEMP <<AUGINSERT
-ins serial before /files/boot/grub/menu.lst/$FIRST_NON_COMMENT
-set /files/boot/grub/menu.lst/serial/unit $GRUB_UNIT
-set /files/boot/grub/menu.lst/serial/speed $SPEED
-ins terminal before /files/boot/grub/menu.lst/$FIRST_NON_COMMENT
-set /files/boot/grub/menu.lst/terminal/timeout $TIMEOUT
-ins serial after /files/boot/grub/menu.lst/terminal/timeout
-ins console after /files/boot/grub/menu.lst/terminal/serial
-AUGINSERT
 
-    # because we want to set a few values and in particular ways
-    # we can't just do 'setm /files/boot/grub/menu.lst/title console ttyS0,9600'
-    TTY=$(echo $DEVICE | cut -d'/' -f3)
-    for entry in $GRUB_TITLES; do
-        cat >> $TEMP <<AUGSETUPCONSOLE
-ins console after /files/boot/grub/menu.lst/title[$entry]/kernel/root
-set /files/boot/grub/menu.lst/title[$entry]/kernel/console $TTY,$SPEED
-ins console after /files/boot/grub/menu.lst/title[$entry]/kernel/root
-set /files/boot/grub/menu.lst/title[$entry]/kernel/console[1] tty0
-AUGSETUPCONSOLE
-    done
 
-    echo 'save' >> $TEMP
+    cat > $TEMP <<EOM1
+defvar g /files/boot/grub/menu.lst
+rm \$g/serial[*]
+rm \$g/terminal[*]
+rm \$g/title[*]/kernel/*[label() = 'console']
+ins serial before \$g/title[1]
+set \$g/serial/unit $GRUB_UNIT
+set \$g/serial/speed $SPEED
+ins terminal after \$g/serial
+set \$g/terminal/timeout $TIMEOUT
+ins serial after \$g/terminal/timeout
+ins console after \$g/terminal/serial
+setm \$g/title[*]/kernel console[1] tty0
+setm \$g/title[*]/kernel console[2] $TTY,$SPEED
+save
+EOM1
     augtool < $TEMP
 
+    # echo "Adding $DEVICE to /etc/securetty"
+    grep -q "^$TTY$" /etc/securetty || echo "$TTY" >> /etc/securetty
+
 # this doesn't work right yet, remember to fix it later
-#    echo "Adding $DEVICE to /etc/securetty"
 #    LAST_TTY=$(augtool ls /files/etc/securetty |grep -v comment |tail -1 | cut -d' ' -f1)
 #    cat > $TEMP <<SECURETTY
 #ins 9999 after /files/etc/securetty/$LAST_TTY
@@ -215,18 +194,22 @@ else   # removing the serial console
     if [[ "$QUIET" == 'false' ]]; then
         echo "Removing the 'console' entries from /boot/grub/menu.lst"
     fi
-    GRUB_TITLES=$(augtool ls /files/boot/grub/menu.lst|grep 'title\[' | cut -d'[' -f2 | cut -d']' -f1)
-    for entry in $GRUB_TITLES; do
-        cat >> $TEMP <<AUGCLEANCONSOLE
-rm /files/boot/grub/menu.lst/title[$entry]/kernel/console
+    
+    UNIT=$(egrep -v '^\s*(#|$)' /boot/grub/menu.lst | grep '^\s*serial' | grep unit= | sed -E -e 's/^.*--unit=([0-9]+).*$/\1/')
+    [[ -z $UNIT ]] && UNIT=0
+    TTY="ttyS$UNIT"
+
+    cat >> $TEMP <<AUGCLEANCONSOLE
+defvar g /files/boot/grub/menu.lst
+rm \$g/serial[*]
+rm \$g/terminal[*]
+rm \$g/title[*]/kernel/*[label() = 'console']
+save
 AUGCLEANCONSOLE
-    done
 
-    echo 'rm /files/boot/grub/menu.lst/serial' >> $TEMP
-    echo 'rm /files/boot/grub/menu.lst/terminal' >> $TEMP
-
-    echo 'save' >> $TEMP
     augtool -b < $TEMP >/dev/null
+
+    sed -i -E -e "/^$TTY$/d" /etc/securetty
 
 # figure out which entry to remove from /etc/securetty once we fix adding it
 fi

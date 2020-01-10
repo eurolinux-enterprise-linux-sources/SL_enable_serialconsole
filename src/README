@@ -1,0 +1,5 @@
+This provided script /usr/sbin/serialconsole_all can be used to configure a serial console.
+
+It accepts a '-h' to provide helpful information as to how it can be used.
+
+The previous perl script is included as 'OLDSCRIPT' in the doc directory for historical purposes
